@@ -5,10 +5,7 @@ use Getopt::Long;
 use warnings;
 use MaterialsScript qw(:all);
 
-#use lib 'E:\ik\test_Files\Documents\readxsd';
-#require 'StdHandler.pl';
-
-use StdHandler2;
+use StdHandler;
 
 # 생성자 함수
 sub new {
@@ -20,7 +17,6 @@ sub new {
 	my $trj = $doc -> Trajectory;
 	my $target_chemicalFormula;
 	
-	print("create molecule set \n");
 	my $self = {
 		_doc => $doc,
 		_trj => $trj,
@@ -31,8 +27,8 @@ sub new {
 
 	my @molecule_arr = _get_target_molecule_array($self);
 
-	$self -> {_target_molecules} = \@molecule_arr;
-	$self -> {_target_chemicalFormula} = $self -> {_target_molecules} -> [0] -> ChemicalFormula;
+	$self -> {_target_molecules} = \@molecule_arr ;
+	$self -> {_target_chemicalFormula} = $self->{_target_molecules} -> [0] -> ChemicalFormula;
 
 	bless $self, $class;
 	return $self;
@@ -70,13 +66,6 @@ sub target_molecules{
 	my ($self) = @_;
 	my @result = @{$self->{_target_molecules}};
 	return @result
-}
-
-sub set_new_target_molecule{
-	my ($self) = @_;
-	my @molecule_arr = _get_target_molecule_array($self);
-
-	$self -> {_target_molecules} = \@molecule_arr;
 }
 
 sub doc{
@@ -135,7 +124,7 @@ sub get_MSD_of_target_molecule {
 	my $newtable = Documents->New("Total_MSD.std");
 	my $TotalTable = $Documents{"Total_MSD.std"};
 	
-	my $table = StdHandler2 -> new($TotalTable);
+	my $table = StdHandler -> new($TotalTable);
 	
 	#Total_MSD의 4개 시트를 생성 함(msd, x, y, z)
 	my @nameArr = ("Total_MSD", "x", "Y", "Z");
@@ -192,7 +181,7 @@ sub get_MSD_of_target_molecule {
 }
 
 #out target molecules position
-sub get_position_of_target_molecule_in_trajection {
+sub get_position_of_target_molecule_in_trajectory {
 	my ($self) = @_;
 	my $doc = $self->{_doc};
 	my $trj = $self->{_trj};
@@ -246,7 +235,7 @@ sub get_position_of_target_molecule_in_trajection {
      	#스터디 테이블을 생성함
 	my $newtable = Documents->New("xyz_Analysis.std");
 	my $xyzTable = $Documents{"xyz_Analysis.std"};
-	my $table = StdHandler2 -> new($xyzTable);
+	my $table = StdHandler -> new($xyzTable);
 	#create sheets about molecules and set column name
 	foreach my $innerListArray(@result){
      		my $hnum = 1;
@@ -309,7 +298,7 @@ sub get_position_of_target_molecule_in_trajection {
 }
 
 #out target molecules position
-sub get_z_of_set_in_trajection {
+sub get_z_of_set {
 	my ($self,
 	   @setNames) = @_;
 	my $doc = $self->{_doc};
@@ -402,7 +391,7 @@ sub get_xyz_displacement_from_trajection {
 	#create sheet
 	my $newtable = Documents->New("xyz_Displacement.std");
 	my $xyzTable = $Documents{"xyz_Displacement.std"};
-	my $table = StdHandler2 -> new($xyzTable);
+	my $table = StdHandler -> new($xyzTable);
 	
 	#set sheetName and column
 	my @sheetArr;
@@ -454,7 +443,72 @@ sub get_xyz_displacement_from_trajection {
 	}
 }
 
+#out target molecules position
+sub get_set_molecule_xyz_in_trajectory {
+	my ($self,
+	   @setNames) = @_;
+	my $doc = $self->{_doc};
+	my $trj = $self->{_trj};
+	
+	my @columnNames = ('t', 'x', 'y', 'z');
+	my $endFrame = $trj->EndFrame;
+	my @aa;
+	foreach my $frame(1..$endFrame){
+		my @ma;
+		$trj -> CurrentFrame = $frame;
+		foreach my $setName(@setNames){
+			my $target_set = $doc -> UnitCell -> Sets("$setName");
 
+			my $atoms = $target_set -> Atoms;
+			my $molecule;
+			foreach my $atom(@$atoms){
+				$molecule = $atom -> Ancestors -> Molecule;
+				last;
+			}			
 
+			my $tmc = $molecule -> Center;
+			my $tmx = $tmc -> X;
+			my $tmy = $tmc -> Y;
+			my $tmz = $tmc -> Z;
+
+			my $data = {'x' => $tmx, 'y' => $tmy, 'z' => $tmz};
+			push(@ma, $data);
+		}
+		push(@aa, \@ma);
+	}
+
+	my $frameNum = scalar @aa;
+
+	#create std
+	my $newtable = Documents->New("xyz_position.std");
+	my $xyzTable = $Documents{"xyz_position.std"};
+	my $table = StdHandler -> new($xyzTable);
+
+	#setSheet
+	$table -> setSheet(@setNames);
+	#set columnHead
+	my $sn = 0;
+	foreach my $setName(@setNames){
+		$table->selectSheet($sn);
+		$table->setColumnHead(@columnNames);
+		$sn++;
+	}
+	
+	#insert Data;
+	my $setNum=0;
+	foreach my $setName(@setNames){
+		$table->selectSheet($setNum);
+		foreach my $row(0.. $frameNum-1){
+			foreach my $col(0..3){
+				if($col == 0){$table->insertData($row, $col, $row * 25000);}
+				elsif($col == 1){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'x'});}
+				elsif($col == 2){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'y'});}
+				elsif($col == 3){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'z'});}
+			}
+		}
+		$setNum++;
+	}
+
+}
 
 1;
