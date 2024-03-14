@@ -1,4 +1,4 @@
-package XtdHandler2;
+package LabAction;
 
 use strict;
 use Getopt::Long;
@@ -6,106 +6,30 @@ use warnings;
 use MaterialsScript qw(:all);
 
 use StdHandler;
+use XtdHandler2;
+use XsdHandler;
 
 # 생성자 함수
 sub new {
 	my $class = shift;
-	my $docName = shift;
-	my $targetForcefieldType = shift;
-
-	my $doc = $Documents{"$docName"};
-	my $trj = $doc -> Trajectory;
-	my $target_chemicalFormula;
 	
 	my $self = {
-		_doc => $doc,
-		_trj => $trj,
-		_targetForcefieldType => $targetForcefieldType,
-		_target_molecules => undef,
-		_target_chemicalFormula => undef,
+		_something => ''
 	};
-
-	my @molecule_arr = _get_target_molecule_array($self);
-
-	$self -> {_target_molecules} = \@molecule_arr ;
-	$self -> {_target_chemicalFormula} = $self->{_target_molecules} -> [0] -> ChemicalFormula;
 
 	bless $self, $class;
 	return $self;
 }
 
-# 타겟 분자를 배열로 받는 함수
-sub _get_target_molecule_array{
-	my ($self) = @_;
-	my $forcefieldType = $self->{_targetForcefieldType};
-	my $doc = $self->{_doc};
-
-	#1. 타겟 분자의 정보를 받기
-	
-	my $atoms = $doc -> UnitCell -> Atoms;
-
-
-	my @array;
-
-	my $num = 0;
-	foreach my $atom(@$atoms){
-		if($atom -> ForcefieldType eq $forcefieldType){
-			my $atomNum = $atom -> Ancestors -> Molecule -> NumAtoms;
-
-			if($num % $atomNum == 0){
-				my $target_molecule = $atom -> Ancestors ->Molecule;
-				push(@array, $target_molecule);
-			}
-			$num++;
-		}
-	}
-	return @array;
-}
-
-sub target_molecules{
-	my ($self) = @_;
-	my @result = @{$self->{_target_molecules}};
-	return @result
-}
-
-sub target_chemicalFormula{
-	my ($self) = @_;
-	my $result = $self->{_target_chemicalFormula};
-	return $result
-}
-
-sub doc{
-	my ($self) = @_;
-	my $doc = $self->{_doc};
-	
-	return $doc;
-}
-
-sub trj{
-	my ($self) = @_;
-	my $doc = $self->{_doc};
-	
-	return $doc -> Trajectory;
-}
-
-# 모델 안의 원자 개수를 가져오는 함수
-sub number_of_atoms {
-	my ($self) = @_;
-	my $doc = $self ->{_doc};
-
-	my $atoms = $doc -> UnitCell -> Atoms;
-	my $size = @$atoms;
-	return $size + 0;
-}
-
 #MSD 분석 및 Total_MSD 출력
 sub get_MSD_of_target_molecule {
-	my ($self) = @_;
-	my $doc = $self->{_doc};
-
-	my @target_molecule_list = @{$self->{_target_molecules}};
+	my ($self, $xtdHandler) = @_;
+    
+	my $doc = $xtdHandler->doc;
+	my @target_molecule_list = $xtdHandler -> target_molecules;
 	my $number_Of_Target_Molecule = scalar @target_molecule_list;
-	my $chemicalFormula = $self -> {_target_chemicalFormula};
+	my $chemicalFormula = $xtdHandler -> target_chemicalFormula;
+
 	my $iterTime = 0;
 	foreach my $target_molecule(@target_molecule_list){
 		#타겟 분자 배열을 순회하며 MSD Forcite를 수행 함
@@ -186,15 +110,19 @@ sub get_MSD_of_target_molecule {
 	}	
 }
 
+
+
+
 #out target molecules position
 sub get_position_of_target_molecule_in_trajectory {
-	my ($self) = @_;
-	my $doc = $self->{_doc};
-	my $trj = $self->{_trj};
-	my @target_molecule_list = @{$self -> {_target_molecules}};
+	my ($self, $xtdHandler) = @_;
+	my $doc = $xtdHandler->doc;
+	my $trj = $xtdHandler->trj;
+
+	my @target_molecule_list = $xtdHandler -> target_molecules;
 	my $number_Of_Target_Molecule = scalar @target_molecule_list;
+	my $chemicalFormula = $xtdHandler -> target_chemicalFormula;
 	
-	my $chemicalFormula = $self -> {_target_chemicalFormula};
 
 	#run trajectory
 	#2001
@@ -306,8 +234,10 @@ sub get_position_of_target_molecule_in_trajectory {
 #out target molecules position
 sub get_z_of_set {
 	my ($self,
+        $xtdHandler,
 	   @setNames) = @_;
-	my $doc = $self->{_doc};
+
+	my $doc = $xtdHandler->doc;
 	
 	my $min_z;
 	my $max_z;
@@ -339,12 +269,12 @@ sub get_z_of_set {
 
 sub get_xyz_displacement_from_trajectory {
 	#get xyz of target molecule in frame
-	my ($self) = @_;
-	my $doc = $self->{_doc};
-	my $trj = $self->{_trj};
-	my $target_ForcefieldType = $self->{_targetForcefieldType};
-	my $chemicalFormula = $self->{_target_chemicalFormula};
-	my @target_molecule_list = @{$self -> {_target_molecules}};
+	my ($self, $xtdHandler) = @_;
+	my $doc = $xtdHandler->doc;
+	my $trj = $xtdHandler->trj;
+
+	my $chemicalFormula = $xtdHandler->target_chemicalFormula;
+	my @target_molecule_list = $xtdHandler -> target_molecules;
 	
 	
 	#run trajectory
@@ -452,9 +382,10 @@ sub get_xyz_displacement_from_trajectory {
 #out target molecules position
 sub get_set_molecule_xyz_in_trajectory {
 	my ($self,
+        $xtdHandler,
 	   @setNames) = @_;
-	my $doc = $self->{_doc};
-	my $trj = $self->{_trj};
+	my $doc = $xtdHandler->doc;
+	my $trj = $xtdHandler->trj;
 	
 	my @columnNames = ('t', 'x', 'y', 'z');
 	my $endFrame = $trj->EndFrame;
