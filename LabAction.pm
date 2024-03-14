@@ -114,7 +114,7 @@ sub get_MSD_of_target_molecule {
 
 
 #out target molecules position
-sub get_position_of_target_molecule_in_trajectory {
+sub get_position_of_target_molecule_in_trj {
 	my ($self, $xtdHandler) = @_;
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
@@ -267,7 +267,7 @@ sub get_z_of_set {
 }
 
 
-sub get_xyz_displacement_from_trajectory {
+sub get_xyz_displacement_in_trj {
 	#get xyz of target molecule in frame
 	my ($self, $xtdHandler) = @_;
 	my $doc = $xtdHandler->doc;
@@ -380,7 +380,7 @@ sub get_xyz_displacement_from_trajectory {
 }
 
 #out target molecules position
-sub get_set_molecule_xyz_in_trajectory {
+sub get_set_molecule_xyz_in_trj {
 	my ($self,
         $xtdHandler,
 	   @setNames) = @_;
@@ -447,5 +447,234 @@ sub get_set_molecule_xyz_in_trajectory {
 	}
 
 }
+
+
+sub run_dynamics_with_reposition {
+	my ($self,
+        $xsdHandler,
+		$temperature,
+		$frequency,
+		$init_dynamics_time,
+		$total_dynamics_time,
+		$pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize,
+
+	   @setNames) = @_;
+	my $doc = $xtdHandler->doc;
+
+	my $fileName = $doc -> Name;
+	my $xsdDoc_Name = $fileName;
+
+	my $endFrame = $total_dynamics_time / $frequency;
+
+	#초기 trj를 생산
+	print("create initial trj")
+	my $sdoc = $Documents{"$xsdDoc_Name.xsd"};
+	my $copyDoc = Documents -> New("$xsdDoc_Name"."_set.xsd");
+	$copyDoc-> CopyFrom($sdoc);
+
+	Modules -> Forcite -> Dynamics -> Run($copyDoc, Settings(
+		'3DPeriodicElectrostaticSummationMethod' => 'PPPM',
+		CurrentForcefield => 'COMPASSIII',
+		Ensemble3D => 'NVT',
+		Temperature => $temperature,
+		NumberOfSteps => $init_dynamics_time * 1000,
+		TrajectoryFrequency => $frequency * 1000,
+		Thermostat => 'Andersen',
+		EnergyDeviation => 1e+023,
+		StressXX => -0.000101325,
+		StressYY => -0.000101325,
+		StressZZ => -0.000101325));
+
+	my $trj;
+
+	#초기 dynamics로 생성된 xtd파일에서 작업 시작
+	my $baseDoc = $Documents{"$xsdDoc_Name"."_set".".xtd"};
+	#최종 결과파일
+	my $copyDoc = Documents -> New("$xsdDoc_Name"."_set"."_result".".xtd");
+	my $copyDoc_Name = "$xsdDoc_Name"."_set"."_result".".xtd";
+	$copyDoc->CopyFrom($baseDoc);
+
+	my $xtdHandler = XtdHandler2 -> new($copyDoc_Name, "h1h");
+
+	#시작 프레임
+	my $currentFrame = 1;
+	#최종적으로 나간 분자들의 집합
+	my @out_moleculeList;
+
+	#이탈을 확인할 Threshold Value를 담을 변수
+	my $z_max_boundary;
+	my $z_min_boundary;
+
+	my $doc = $xtdHandler -> doc();
+	$trj = $xtdHandler -> trj();
+
+	#이탈지점 Thresold 값 추출
+	my $z_boundary = $xtdHandler -> get_z_of_set(@setNames);
+	$z_max_boundary = $z_boundary -> {'max'} + 13;
+	$z_min_boundary = $z_boundary -> {'min'} - 13;
+
+	#총 이탈한 분자 개수
+	my $total_out_num = 0;
+	while($currentFrame <= $endFrame){
+		print("\n \n Main loot $currentFrame \n");
+		$trj-> CurrentFrame = $currentFrame;
+		
+		my $isOut = 0;
+		my $outNum = 0;
+
+		#타겟 분자가 이탈지점을 넘어갔는지 확인
+		my @targetMolecules = $xtdHandler -> target_molecules;
+		foreach my $target_molecule(@targetMolecules){
+			my $target_z = $target_molecule -> Center -> Z;
+			#만약 넘어갔을 경우 이탈 분자 저장
+			if($target_z <= $z_min_boundary || $target_z >= $z_max_boundary){
+				print("detect break away1 \n");
+				print("t : $target_z, m : $z_min_boundary , max : $z_max_boundary \n");
+				push(@out_moleculeList, {'f' => $currentFrame, 'm' => $target_molecule});
+				
+				$isOut = 1;
+				$outNum++;
+				$total_out_num++;
+			}
+		}
+		
+		#만약 분자가 이탈지점을 넘어갔을 경우의 3d 문서 작업
+		if($isOut == 1){
+			print("go here \n");
+			
+			#넘어간 순간의 스냅샷을 생성
+			print("make snapShot \n");
+			my $snapDoc = $doc;
+			$snapDoc -> CurrentFrame = $trj -> CurrentFrame;
+			
+			$snapDoc -> Export("snapShot.xsd");
+			$snapDoc -> Export("snapShot$currentFrame".".xsd");
+			my $xsdHandler = XsdHandler -> new("snapShot.xsd", "h1h");
+
+			#xsd파일에서 넘어간 분자의 위치를 빈 공간으로 이동 조정
+			my @empty_area_list = $xsdHandler -> get_empty_position($pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize, $outNum);
+			my $xsdDoc = $xsdHandler -> doc;
+		
+			#check1
+			my @array = $xsdHandler -> target_molecules;
+			my $tmNum = 0;
+			
+			foreach my $tm(@array){
+				my $tmz = $tm -> Center -> Z;
+				if($tmz <= $z_min_boundary || $tmz >= $z_max_boundary){
+					#over molecule
+					my $tox = $empty_area_list[$tmNum] -> {'x'};
+					my $toy = $empty_area_list[$tmNum] -> {'y'};
+					my $toz = $empty_area_list[$tmNum] -> {'z'};
+					print("object position / to : $tox $toy $toz \n");
+					my $tc = $tm -> Center;
+					my $tx = $tc -> X;
+					my $ty = $tc -> Y;
+					my $tz = $tc -> Z;
+					print("target position / tg : $tx $ty $tz \n");
+					my $dx = $tox - $tx;
+					my $dy = $toy - $ty;
+					my $dz = $toz - $tz;
+					print("to - tg position / d : $dx $dy $dz \n");
+					foreach my $atom (@{$tm -> Atoms}){
+						my $movedx = $atom->X + $dx;
+						my $movedy = $atom->Y + $dy;
+						my $movedz = $atom->Z + $dz;
+						print("     moved p : $movedx $movedy $movedz \n");
+						$atom -> X = $atom->X + $dx;
+						$atom -> Y = $atom->Y + $dy;
+						$atom -> Z = $atom->Z + $dz;
+					}
+					$tmNum++;
+				}
+			}
+			
+			
+			#xtd파일에서 넘어간 프레임 삭제
+			my $endFrame = $trj -> EndFrame;
+			$trj -> removeFrames(Frames(Start => $currentFrame, End => $endFrame));
+			
+			#위치가 조정된 xsd파일을 xtd파일과 통합
+			print("integrate snapShot \n");
+			$trj->AppendFramesFrom($xsdDoc);
+			#스냅샷 삭제
+			print("Delete snapShot \n");
+			$xsdDoc -> Delete;
+			
+			#최종 위치에서 dynamics 재게산
+			print("recalc trj \n");
+			Modules -> Forcite -> Dynamics -> Run($copyDoc, Settings(
+				'3DPeriodicElectrostaticSummationMethod' => 'PPPM',
+				CurrentForcefield => 'COMPASSIII',
+				Ensemble3D => 'NVT',
+				TrajectoryRestart =>'Yes',
+				AppendTrajectory => 'Yes',
+				Temperature => $temperature,
+				NumberOfSteps => $frequency * 1000,
+				TrajectoryFrequency => $frequency * 1000,
+				Thermostat => 'Andersen',
+				EnergyDeviation => 1e+023,
+				StressXX => -0.000101325,
+				StressYY => -0.000101325,
+				StressZZ => -0.000101325));		
+		} elsif ($currentFrame == $trj -> EndFrame) {
+			#끝 프레임일 경우 dynamics 재계산
+			print("recalc trj \n");
+			Modules -> Forcite -> Dynamics -> Run($copyDoc, Settings(
+				'3DPeriodicElectrostaticSummationMethod' => 'PPPM',
+				CurrentForcefield => 'COMPASSIII',
+				Ensemble3D => 'NVT',
+				TrajectoryRestart =>'Yes',
+				AppendTrajectory => 'Yes',
+				Temperature => $temperature,
+				NumberOfSteps => $frequency * 1000,
+				TrajectoryFrequency => $frequency * 1000,
+				Thermostat => 'Andersen',
+				EnergyDeviation => 1e+023,
+				StressXX => -0.000101325,
+				StressYY => -0.000101325,
+				StressZZ => -0.000101325));
+		}
+
+		$currentFrame++;
+	}
+
+	#이탈한 분자의 set생성
+	#set이름 규칙 => 넘어간프레임 (몇번째로 넘어간 분자인지);
+	#만약 7번 프레임에 하나, 14번 프레임에 하나 넘어갔다면
+	#7 (0), 14 (1) 이렇게 두개가 생성됨.
+	my $mn = 0;
+	foreach my $moleculeData(@out_moleculeList){
+		my $f = $moleculeData -> {'f'};
+		my $m = $moleculeData -> {'m'};
+		$doc ->CreateSet("$f ($mn)", $m);
+		$mn++;
+	}
+
+	#이탈한 분자들의 각 프레임당 xyz 좌표를 std테이블로 생성.
+	my $xsdDoc_Name = "PP_2NL_C_new";
+	my $copyDOc_Name = "$xsdDoc_Name"."_set"."_result".".xtd";
+	my $xtdHandler = XtdHandler2 -> new($copyDOc_Name, "h1h");
+
+	my @target_sets;
+
+	my $rsets = $doc -> UnitCell -> Sets;
+	foreach my $set(@$rsets) {
+		my $str = $set->Name;
+		#정규식에 맞는 setName만 가져옴
+		#이 정규식은 '7 (0)' 이 형식을 가져옴.
+		if ($str =~ /^\d+(\s+\(\d+\))?$/) {
+			push(@target_sets, $str);
+		}
+	}
+	my $target_count = scalar @target_sets;
+
+	if($target_count > 0){
+		get_set_molecule_xyz_in_trj($self, $xtdHandler, @target_sets);
+	}else{
+		print("0 output\n");
+	}
+}
+
 
 1;
