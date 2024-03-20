@@ -74,6 +74,13 @@ sub target_molecules{
 	return @result
 }
 
+sub target_chemicalFormula{
+	my ($self) = @_;
+	my $result = $self -> {_target_chemicalFormula};
+	return $result
+}
+
+
 sub set_new_target_molecule{
 	my ($self) = @_;
 	my @molecule_arr = _get_target_molecule_array($self);
@@ -218,5 +225,106 @@ sub get_empty_position {
 	}
 	return @result;
 }
+
+
+sub get_empty_position2 {
+	my ($self, $xs, $xe, $ys, $ye, $zs, $ze, $cellSize, $number) = @_;
+	my $doc = $self ->{_doc};
+
+	my @rea;
+	my @result;
+	#cellSize ^ 3로 cell 분할
+	my $xcn = int(($xe - $xs) / $cellSize);
+	my $ycn = int(($ye - $ys) / $cellSize);
+	my $zcn = int(($ze - $zs) / $cellSize);
+
+	my @arr;
+	foreach my $xx(1..$xcn){
+		my @yarr;
+		foreach my $yy(1..$ycn){
+			my @zarr;
+			foreach my $zz(1..$zcn){
+				push(@zarr, 0);
+			}
+			push(@yarr, \@zarr);
+		}
+		push(@arr, \@yarr);
+	}
+
+	#각 아톰을 순회해서 셀에 각각 할당
+	foreach my $tm(@{$self -> {_target_molecules}}){
+		my $tc = $tm -> Center; 
+		my $tx;
+		my $incx = ($tc->X) % ($xe - $xs);
+		if($incx < 0){
+			$tx = $incx + ($xe - $xs);
+		} else {
+			$tx = $incx;
+		}
+		my $ty;
+		my $incy = ($tc->Y) % ($ye - $ys);
+		if($incy < 0){
+			$ty = $incy + ($xe - $xs);
+		} else {
+			$ty = $incy;
+		} 
+		my $tz = $tc -> Z; 
+
+		my $xci = int(($tx - $xs) / $cellSize);
+		my $yci = int(($ty - $ys) / $cellSize);
+		my $zci = int(($tz - $zs) / $cellSize);
+
+		if($xci ==$xcn ){$xci = $xcn -1;}
+		if($yci ==$ycn ){$yci = $ycn -1;}
+		if($zci ==$zcn ){$zci = $zcn -1;}
+
+		if(($tz >= $zs && $tz <= $ze)){
+			$arr[$xci] -> [$yci] -> [$zci] = 1;
+		}
+	}
+
+	foreach my $xx(0..($xcn-1)){
+		foreach my $yy(0..($ycn-1)){
+			foreach my $zz(0..($zcn-1)){
+				my $data = $arr[$xx] -> [$yy] -> [$zz];
+				if($data == 0){
+					my $posx = $xs + $xx * $cellSize + $cellSize/2;
+					my $posy = $ys + $yy * $cellSize + $cellSize/2;
+					my $posz = $zs + $zz * $cellSize + $cellSize/2;
+					push(@rea, {'x' => $posx, 'y' => $posy, 'z' => $posz  });
+				}
+			}
+		}
+	}
+
+	#가운데에서 가장 가가운 셀을 필요 갯수만큼 가져옴
+	my $midx = ($xe + $xs) / 2;
+	my $midy = ($ye + $ys) / 2;
+	my $midz = ($ze + $zs) / 2;
+
+	#가운데에서 가장 가까운 순서로 정렬
+	my $temp;
+
+	my @rea_sort = sort {
+		my $onex = $a -> {'x'} - $midx;
+		my $oney = $a -> {'y'} - $midy;
+		my $onez = $a -> {'z'} - $midz;
+
+		my $twox = $b -> {'x'} - $midx;
+		my $twoy = $b -> {'y'} - $midy;
+		my $twoz = $b -> {'z'} - $midz;
+
+		my $dist_a = sqrt($onex**2 + $oney**2 + $onez**2);
+		my $dist_b = sqrt($twox**2 + $twoy**2 + $twoz**2);
+
+		$dist_a <=> $dist_b;
+	} @rea;
+
+	foreach my $n(0..$number - 1){
+		push(@result, $rea_sort[$n]);
+	}
+	return @result;
+}
+
 
 1;

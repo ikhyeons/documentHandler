@@ -445,7 +445,6 @@ sub get_set_molecule_xyz_in_trj {
 		}
 		$setNum++;
 	}
-
 }
 
 
@@ -457,17 +456,16 @@ sub run_dynamics_with_reposition {
 		$init_dynamics_time,
 		$total_dynamics_time,
 		$pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize,
-
 	   @setNames) = @_;
-	my $doc = $xtdHandler->doc;
+	my $pdoc = $xsdHandler->doc;
 
-	my $fileName = $doc -> Name;
+	my $fileName = $pdoc -> Name;
 	my $xsdDoc_Name = $fileName;
 
 	my $endFrame = $total_dynamics_time / $frequency;
 
 	#초기 trj를 생산
-	print("create initial trj")
+	print("create initial trj");
 	my $sdoc = $Documents{"$xsdDoc_Name.xsd"};
 	my $copyDoc = Documents -> New("$xsdDoc_Name"."_set.xsd");
 	$copyDoc-> CopyFrom($sdoc);
@@ -490,9 +488,9 @@ sub run_dynamics_with_reposition {
 	#초기 dynamics로 생성된 xtd파일에서 작업 시작
 	my $baseDoc = $Documents{"$xsdDoc_Name"."_set".".xtd"};
 	#최종 결과파일
-	my $copyDoc = Documents -> New("$xsdDoc_Name"."_set"."_result".".xtd");
+	my $copyDoc2 = Documents -> New("$xsdDoc_Name"."_set"."_result".".xtd");
 	my $copyDoc_Name = "$xsdDoc_Name"."_set"."_result".".xtd";
-	$copyDoc->CopyFrom($baseDoc);
+	$copyDoc2->CopyFrom($baseDoc);
 
 	my $xtdHandler = XtdHandler2 -> new($copyDoc_Name, "h1h");
 
@@ -549,14 +547,14 @@ sub run_dynamics_with_reposition {
 			
 			$snapDoc -> Export("snapShot.xsd");
 			$snapDoc -> Export("snapShot$currentFrame".".xsd");
-			my $xsdHandler = XsdHandler -> new("snapShot.xsd", "h1h");
+			my $xsdHandler2 = XsdHandler -> new("snapShot.xsd", "h1h");
 
 			#xsd파일에서 넘어간 분자의 위치를 빈 공간으로 이동 조정
-			my @empty_area_list = $xsdHandler -> get_empty_position($pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize, $outNum);
-			my $xsdDoc = $xsdHandler -> doc;
+			my @empty_area_list = $xsdHandler2 -> get_empty_position($pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize, $outNum);
+			my $xsdDoc = $xsdHandler2 -> doc;
 		
 			#check1
-			my @array = $xsdHandler -> target_molecules;
+			my @array = $xsdHandler2 -> target_molecules;
 			my $tmNum = 0;
 			
 			foreach my $tm(@array){
@@ -603,7 +601,7 @@ sub run_dynamics_with_reposition {
 			
 			#최종 위치에서 dynamics 재게산
 			print("recalc trj \n");
-			Modules -> Forcite -> Dynamics -> Run($copyDoc, Settings(
+			Modules -> Forcite -> Dynamics -> Run($copyDoc2, Settings(
 				'3DPeriodicElectrostaticSummationMethod' => 'PPPM',
 				CurrentForcefield => 'COMPASSIII',
 				Ensemble3D => 'NVT',
@@ -616,11 +614,11 @@ sub run_dynamics_with_reposition {
 				EnergyDeviation => 1e+023,
 				StressXX => -0.000101325,
 				StressYY => -0.000101325,
-				StressZZ => -0.000101325));		
+				StressZZ => -0.000101325));
 		} elsif ($currentFrame == $trj -> EndFrame) {
 			#끝 프레임일 경우 dynamics 재계산
 			print("recalc trj \n");
-			Modules -> Forcite -> Dynamics -> Run($copyDoc, Settings(
+			Modules -> Forcite -> Dynamics -> Run($copyDoc2, Settings(
 				'3DPeriodicElectrostaticSummationMethod' => 'PPPM',
 				CurrentForcefield => 'COMPASSIII',
 				Ensemble3D => 'NVT',
@@ -652,9 +650,8 @@ sub run_dynamics_with_reposition {
 	}
 
 	#이탈한 분자들의 각 프레임당 xyz 좌표를 std테이블로 생성.
-	my $xsdDoc_Name = "PP_2NL_C_new";
 	my $copyDOc_Name = "$xsdDoc_Name"."_set"."_result".".xtd";
-	my $xtdHandler = XtdHandler2 -> new($copyDOc_Name, "h1h");
+	my $xtdHandler2 = XtdHandler2 -> new($copyDOc_Name, "h1h");
 
 	my @target_sets;
 
@@ -670,7 +667,7 @@ sub run_dynamics_with_reposition {
 	my $target_count = scalar @target_sets;
 
 	if($target_count > 0){
-		get_set_molecule_xyz_in_trj($self, $xtdHandler, @target_sets);
+		get_set_molecule_xyz_in_trj($self, $xtdHandler2, @target_sets);
 	}else{
 		print("0 output\n");
 	}
