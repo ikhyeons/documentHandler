@@ -383,13 +383,14 @@ sub get_xyz_displacement_in_trj {
 sub get_set_molecule_xyz_in_trj {
 	my ($self,
         $xtdHandler,
-	   @setNames) = @_;
+	   @setNames, $fq) = @_;
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
 	
 	my @columnNames = ('t', 'x', 'y', 'z');
 	my $endFrame = $trj->EndFrame;
 	my @aa;
+
 	foreach my $frame(1..$endFrame){
 		my @ma;
 		$trj -> CurrentFrame = $frame;
@@ -437,7 +438,7 @@ sub get_set_molecule_xyz_in_trj {
 		$table->selectSheet($setNum);
 		foreach my $row(0.. $frameNum-1){
 			foreach my $col(0..3){
-				if($col == 0){$table->insertData($row, $col, $row * 25000);}
+				if($col == 0){$table->insertData($row, $col, $row * $fq);}
 				elsif($col == 1){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'x'});}
 				elsif($col == 2){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'y'});}
 				elsif($col == 3){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'z'});}
@@ -551,6 +552,14 @@ sub run_dynamics_with_reposition {
 
 			#xsd파일에서 넘어간 분자의 위치를 빈 공간으로 이동 조정
 			my @empty_area_list = $xsdHandler2 -> get_empty_position($pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize, $outNum);
+
+			foreach my $qq(@empty_area_list){
+				my $qx = $qq->{'x'};
+				my $qy = $qq->{'y'};
+				my $qz = $qq->{'z'};
+				print("$qx $qy $qz \n");
+
+			}
 			my $xsdDoc = $xsdHandler2 -> doc;
 		
 			#check1
@@ -660,17 +669,86 @@ sub run_dynamics_with_reposition {
 		my $str = $set->Name;
 		#정규식에 맞는 setName만 가져옴
 		#이 정규식은 '7 (0)' 이 형식을 가져옴.
-		if ($str =~ /^\d+(\s+\(\d+\))?$/) {
+		if ($str =~ /^\d+(\s+\(\d+\))$/) {
 			push(@target_sets, $str);
 		}
 	}
+
 	my $target_count = scalar @target_sets;
 
 	if($target_count > 0){
-		get_set_molecule_xyz_in_trj($self, $xtdHandler2, @target_sets);
+		get_set_molecule_xyz_in_trj($self, $xtdHandler2, @target_sets , $frequency);
 	}else{
 		print("0 output\n");
 	}
+}
+
+sub create_set_of_out_molecule {
+	my ($self,
+        $xtdHandler,
+	   @setNames) = @_;
+
+	my $thresholdAdd = 13;
+
+	my $doc = $xtdHandler -> doc();
+	my $trj = $xtdHandler -> trj();
+
+	#my $endFrame = $trj -> EndFrame;
+	my $endFrame = 364;
+
+	print("EndFrame : $endFrame \n");
+	#나간 분자 목록
+	my @out_moleculeList;
+
+	#my $currentFrame = 1;
+	my $currentFrame = 358;
+
+	#이탈을 확인할 Threshold Value를 담을 변수
+	my $z_max_boundary;
+	my $z_min_boundary;
+
+	#이탈지점 Thresold 값 추출
+	my $z_boundary = $xtdHandler -> get_z_of_set(@setNames);
+	$z_max_boundary = $z_boundary -> {'max'} + $thresholdAdd;
+	$z_min_boundary = $z_boundary -> {'min'} - $thresholdAdd;
+
+	#각 프레임 마다 타겟분자가 나갔는지 검사
+
+	while($currentFrame <= $endFrame){
+		print("\n check $currentFrame Frame \n");
+		$trj-> CurrentFrame = $currentFrame;
+
+		#타겟 분자가 이탈지점을 넘어갔는지 확인
+		my @targetMolecules = $xtdHandler -> target_molecules;
+		foreach my $target_molecule(@targetMolecules){
+			my $target_z = $target_molecule -> Center -> Z;
+			#만약 넘어갔을 경우 분자 이름을 1로 바꾸고 이탈 분자 저장
+			#이미 한번 넘어간 분자는 다시 저장하지 않음
+			if(($target_z <= $z_min_boundary || $target_z >= $z_max_boundary) && $target_molecule->Name ne "1"){
+				print("detect break away1 \n");
+				print("target : $target_z , min : $z_min_boundary , max : $z_max_boundary \n");
+				$target_molecule->Name = "1";
+				push(@out_moleculeList, {'f' => $currentFrame, 'm' => $target_molecule});
+			}
+		}
+		$currentFrame++;
+	}
+
+	#나간 분자들에게 set생성
+	#set이름 규칙 => 넘어간프레임 (몇번째로 넘어간 분자인지);
+	#만약 7번 프레임에 하나, 14번 프레임에 하나 넘어갔다면
+	#7 (0), 14 (1) 이렇게 두개가 생성됨.
+	my $mn = 0;
+	foreach my $moleculeData(@out_moleculeList){
+		my $f = $moleculeData -> {'f'};
+		my $m = $moleculeData -> {'m'};
+		$doc ->CreateSet("$f ($mn)", $m);
+		$mn++;
+	}
+
+	my $zmin = $z_boundary->{'min'};
+	my $zmax = $z_boundary->{'max'};
+	print("set 끝점 → min : $zmin , max : $zmax / 각 set에서 더해진 숫자 : $thresholdAdd \n 경계값 → min : $z_min_boundary , max : $z_max_boundary \n");
 }
 
 
