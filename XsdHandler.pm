@@ -98,6 +98,32 @@ sub number_of_atoms {
 	return $size + 0;
 }
 
+#모든 set을 가져옴
+sub get_all_set{
+	my ($self) = @_;
+	my $doc = $self->{_doc};
+	my $sets = $doc->UnitCell->Sets;
+
+	return @{$sets};
+}
+
+#파라미터로 준 문자를 이름에 포함한 set만 가져옴
+sub get_filtered_set{
+	my ($self, $keyword) = @_;
+	my $doc = $self->{_doc};
+	my $sets = $doc->UnitCell->Sets;
+	my @results = ();
+
+	foreach my $set(@$sets){
+		my $setName = $set->Name;
+		if (index($setName, $keyword) != -1) {
+			push(@results, $set);
+		}
+	}
+
+	return @results;
+}
+
 sub get_z_of_set { 
 	my ($self,
 	   @setNames) = @_;
@@ -132,9 +158,18 @@ sub get_z_of_set {
 }
 
 sub get_empty_position {
-	my ($self, $xs, $xe, $ys, $ye, $zs, $ze, $cellSize, $number) = @_;
-	my $doc = $self ->{_doc};
+	my ($self, $params) = @_;
 
+	my $xs = $params ->{'x_start'};
+	my $xe = $params ->{'z_end'};
+	my $ys = $params ->{'y_start'};
+	my $ye = $params ->{'y_end'};
+	my $zs = $params ->{'z_start'};
+	my $ze = $params ->{'z_end'};
+	my $cellSize = $params ->{'cellSize'};
+	my $number = $params -> {'getPosNum'};
+
+	my $doc = $self ->{_doc};
 	my @rea;
 	my @result;
 	#cellSize ^ 3로 cell 분할
