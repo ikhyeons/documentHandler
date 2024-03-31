@@ -231,40 +231,40 @@ sub get_position_of_target_molecule_in_trj {
 	}
 }
 
-#out target molecules position
-sub get_z_of_set {
-	my ($self,
-        $xtdHandler,
-	   @setNames) = @_;
+# #out target molecules position
+# sub get_z_of_set {
+# 	my ($self,
+#         $xtdHandler,
+# 	   @setNames) = @_;
 
-	my $doc = $xtdHandler->doc;
+# 	my $doc = $xtdHandler->doc;
 	
-	my $min_z;
-	my $max_z;
+# 	my $min_z;
+# 	my $max_z;
 	
-	foreach my $setName(@setNames){
-		my $target_set = $doc -> UnitCell -> Sets("$setName");
-		my $atoms = $target_set -> Atoms;
+# 	foreach my $setName(@setNames){
+# 		my $target_set = $doc -> UnitCell -> Sets("$setName");
+# 		my $atoms = $target_set -> Atoms;
 		
-		foreach my $atom (@$atoms){
-			my $atom_name = $atom -> Name;
-			my $atom_z = $atom -> XYZ -> Z;
-			if (!defined($min_z)){
-				$min_z = $atom_z;
-				$max_z = $atom_z;
-			} else {
-				if($atom_z <= $min_z){
-					$min_z = $atom_z;
-				}
-				if($atom_z >= $max_z){
-					$max_z = $atom_z;
-				}
-			}
-		}
-	}
-	my $minMax = {'max' => $max_z, 'min' => $min_z};
-	return $minMax;
-}
+# 		foreach my $atom (@$atoms){
+# 			my $atom_name = $atom -> Name;
+# 			my $atom_z = $atom -> XYZ -> Z;
+# 			if (!defined($min_z)){
+# 				$min_z = $atom_z;
+# 				$max_z = $atom_z;
+# 			} else {
+# 				if($atom_z <= $min_z){
+# 					$min_z = $atom_z;
+# 				}
+# 				if($atom_z >= $max_z){
+# 					$max_z = $atom_z;
+# 				}
+# 			}
+# 		}
+# 	}
+# 	my $minMax = {'max' => $max_z, 'min' => $min_z};
+# 	return $minMax;
+# }
 
 
 sub get_xyz_displacement_in_trj {
@@ -381,46 +381,33 @@ sub get_xyz_displacement_in_trj {
 
 #out target molecules position
 sub get_set_molecule_xyz_in_trj {
-	my ($self,
-        $xtdHandler,
-	   @setNames, $fq) = @_;
+	my ($self, $params) = @_;
+	my $xtdHandler = $params -> {'xtdHandler'};
+	my $startf = $params -> {'startFrame'};
+	my $endf = $params -> {'endFrame'};
+	my $fq = $params -> {'frequency'};
+	my @setNames = @{$params -> {'setNames'}};
+
+
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
 	
 	my @columnNames = ('t', 'x', 'y', 'z');
-	my $endFrame = $trj->EndFrame;
-	my @aa;
+	my $endFrame = $endf;
+	print("SF $startf EF $endFrame / start make std \n");
+	
+	my @set_molecules;
 
-	foreach my $frame(1..$endFrame){
-		my @ma;
-		$trj -> CurrentFrame = $frame;
-		foreach my $setName(@setNames){
-			my $target_set = $doc -> UnitCell -> Sets("$setName");
-
-			my $atoms = $target_set -> Atoms;
-			my $molecule;
-			foreach my $atom(@$atoms){
-				$molecule = $atom -> Ancestors -> Molecule;
-				last;
-			}			
-
-			my $tmc = $molecule -> Center;
-			my $tmx = $tmc -> X;
-			my $tmy = $tmc -> Y;
-			my $tmz = $tmc -> Z;
-
-			my $data = {'x' => $tmx, 'y' => $tmy, 'z' => $tmz};
-			push(@ma, $data);
+	foreach my $setName(@setNames){
+		my $atoms = $doc -> UnitCell -> Sets($setName) -> Atoms;
+		foreach my $atom(@$atoms){
+			push(@set_molecules, $atom -> Ancestors -> Molecule);
+			last;
 		}
-		push(@aa, \@ma);
 	}
 
-	my $frameNum = scalar @aa;
-
-	#create std
-	my $newtable = Documents->New("xyz_position.std");
-	my $xyzTable = $Documents{"xyz_position.std"};
-	my $table = StdHandler -> new($xyzTable);
+	my $newtable = Documents->New("xyz_position"."_$startf"."-$endf".".std");
+	my $table = StdHandler -> new($newtable);
 
 	#setSheet
 	$table -> setSheet(@setNames);
@@ -432,32 +419,111 @@ sub get_set_molecule_xyz_in_trj {
 		$sn++;
 	}
 	
-	#insert Data;
-	my $setNum=0;
-	foreach my $setName(@setNames){
-		$table->selectSheet($setNum);
-		foreach my $row(0.. $frameNum-1){
+	my $rowNum = 0;
+	foreach my $frame($startf..$endFrame){
+		print("get xyz in trj f:$frame \n");
+		$trj -> CurrentFrame = $frame;
+		my $setNum=0;
+		foreach my $molecule(@set_molecules){
+			$table->selectSheet($setNum);
+			my $tmc = $molecule -> Center;
+			my $tmx = $tmc -> X;
+			my $tmy = $tmc -> Y;
+			my $tmz = $tmc -> Z;
+
 			foreach my $col(0..3){
-				if($col == 0){$table->insertData($row, $col, $row * $fq);}
-				elsif($col == 1){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'x'});}
-				elsif($col == 2){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'y'});}
-				elsif($col == 3){$table->insertData($row, $col, $aa[$row] -> [$setNum] -> {'z'});}
+				if($col == 0){$table->insertData($rowNum, $col, ($rowNum + $startf - 1) * $fq);}
+				elsif($col == 1){$table->insertData($rowNum, $col, $tmx);}
+				elsif($col == 2){$table->insertData($rowNum, $col, $tmy);}
+				elsif($col == 3){$table->insertData($rowNum, $col, $tmz);}
+			}
+			$setNum++;
+		}
+		$rowNum++;
+	}
+
+}
+
+sub count_out_molecule_num_by_time{
+	my ($self, $params) = @_;
+	my $xtdHandler = $params -> {'xtdHandler'};
+	my $startf = $params -> {'startFrame'};
+	my $endf = $params -> {'endFrame'};
+	my $fq = $params -> {'frequency'};
+	my @thresoldSetNames = @{$params -> {'thresoldSetNames'}};
+
+	my $thresholdAdd = 13;
+
+	my $doc = $xtdHandler -> doc();
+	my $trj = $xtdHandler -> trj();
+
+	my $endFrame = $endf;
+
+	print("EndFrame : $endFrame \n");
+	#나간 분자 목록
+	my $currentFrame = $startf;
+
+	#이탈을 확인할 Threshold Value를 담을 변수
+	my $z_max_boundary;
+	my $z_min_boundary;
+
+	#이탈지점 Thresold 값 추출
+	my $z_boundary = $xtdHandler -> get_z_of_set(@thresoldSetNames);
+	$z_max_boundary = $z_boundary -> {'max'} + $thresholdAdd;
+	$z_min_boundary = $z_boundary -> {'min'} - $thresholdAdd;
+
+	#각 프레임 마다 타겟분자가 나갔는지 검사
+	my $num = $startf;
+
+	#std파일 생성
+	my $newtable = Documents->New("out_molecule_count_"."$startf"."-$endf".".std");
+	my $table = StdHandler -> new($newtable);
+	my @columns = ("time", "count");
+	$table -> setColumnHead(@columns);
+
+	my $row = 0;
+	while($currentFrame <= $endFrame){
+		#프레임 별 이탈갯수
+		my $mn = 0;
+		print("\n check $currentFrame Frame \n");
+		$trj-> CurrentFrame = $currentFrame;
+
+		#타겟 분자가 이탈지점을 넘어갔는지 확인
+		my @targetMolecules = $xtdHandler -> target_molecules;
+		foreach my $target_molecule(@targetMolecules){
+			my $target_z = $target_molecule -> Center -> Z;
+			#std 생성 및 기록
+			if($target_z <= $z_min_boundary || $target_z >= $z_max_boundary){
+				$mn++;
 			}
 		}
-		$setNum++;
+		
+		foreach my $col(0..1){
+			if($col ==0){$table->insertData($row, $col, $fq * ($row + $startf));}
+			elsif($col == 1){$table->insertData($row, $col, $mn);}
+		}
+		$row++;
+		$currentFrame++;
 	}
 }
 
-
 sub run_dynamics_with_reposition {
-	my ($self,
-        $xsdHandler,
-		$temperature,
-		$frequency,
-		$init_dynamics_time,
-		$total_dynamics_time,
-		$pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize,
-	   @setNames) = @_;
+	my ($self, $params) = @_;
+	my $xsdHandler = $params->{'xsdHandler'};
+	my $temperature = $params->{'temperature'};
+	my $frequency = $params->{'frequency'};
+	my $init_dynamics_time = $params->{'init_dynamics_time'};
+	my $total_dynamics_time = $params->{'total_dynamics_time'};
+	my $pxs = $params->{'x_start'};
+	my $pxe = $params->{'x_end'};
+	my $pys = $params->{'y_start'};
+	my $pye = $params->{'y_end'};
+	my $pzs = $params->{'z_start'};
+	my $pze = $params->{'z_end'};
+	my $pCellSize = $params->{'cellSize'};
+	my @setNames = @{$params->{'thresoldSetNames'}};
+
+
 	my $pdoc = $xsdHandler->doc;
 
 	my $fileName = $pdoc -> Name;
@@ -466,7 +532,7 @@ sub run_dynamics_with_reposition {
 	my $endFrame = $total_dynamics_time / $frequency;
 
 	#초기 trj를 생산
-	print("create initial trj");
+	print("create initial trj \n");
 	my $sdoc = $Documents{"$xsdDoc_Name.xsd"};
 	my $copyDoc = Documents -> New("$xsdDoc_Name"."_set.xsd");
 	$copyDoc-> CopyFrom($sdoc);
@@ -551,7 +617,12 @@ sub run_dynamics_with_reposition {
 			my $xsdHandler2 = XsdHandler -> new("snapShot.xsd", "h1h");
 
 			#xsd파일에서 넘어간 분자의 위치를 빈 공간으로 이동 조정
-			my @empty_area_list = $xsdHandler2 -> get_empty_position($pxs, $pxe, $pys, $pye, $pzs, $pze, $pCellSize, $outNum);
+			my @empty_area_list = $xsdHandler2 -> get_empty_position({
+				'x_start' => $pxs, 'x_end' => $pxe,
+				'y_start' => $pys, 'y_end' => $pye,
+				'z_start' => $pzs, 'z_end' => $pze,
+				'cellSize' => $pCellSize, 'getPosNum' => $outNum});
+		
 
 			foreach my $qq(@empty_area_list){
 				my $qx = $qq->{'x'};
@@ -677,31 +748,38 @@ sub run_dynamics_with_reposition {
 	my $target_count = scalar @target_sets;
 
 	if($target_count > 0){
-		get_set_molecule_xyz_in_trj($self, $xtdHandler2, @target_sets , $frequency);
-	}else{
+		get_set_molecule_xyz_in_trj($self, 
+		{
+			'xtdHandler' => $xtdHandler2,
+			'startFrame' => 1,
+			'endFrame' => $endFrame,
+			'frequency' => $frequency,
+			'setNames' => \@target_sets
+		});
+	} else {
 		print("0 output\n");
 	}
 }
 
 sub create_set_of_out_molecule {
-	my ($self,
-        $xtdHandler,
-	   @setNames) = @_;
+	my ($self, $params) = @_;
 
 	my $thresholdAdd = 13;
+	my $xtdHandler = $params -> {'xtdHandler'};
+	my $startf = $params -> {'startFrame'};
+	my $endf = $params -> {'endFrame'};
+	my $fq = $params -> {'frequency'};
+	my @setNames = @{$params -> {'thresoldSetNames'}};
 
 	my $doc = $xtdHandler -> doc();
 	my $trj = $xtdHandler -> trj();
 
-	#my $endFrame = $trj -> EndFrame;
-	my $endFrame = 364;
+	my $endFrame = $endf;
 
 	print("EndFrame : $endFrame \n");
 	#나간 분자 목록
-	my @out_moleculeList;
 
-	#my $currentFrame = 1;
-	my $currentFrame = 358;
+	my $currentFrame = $startf;
 
 	#이탈을 확인할 Threshold Value를 담을 변수
 	my $z_max_boundary;
@@ -714,6 +792,8 @@ sub create_set_of_out_molecule {
 
 	#각 프레임 마다 타겟분자가 나갔는지 검사
 
+	my $num = $startf;
+	my $mn = 0;
 	while($currentFrame <= $endFrame){
 		print("\n check $currentFrame Frame \n");
 		$trj-> CurrentFrame = $currentFrame;
@@ -728,28 +808,18 @@ sub create_set_of_out_molecule {
 				print("detect break away1 \n");
 				print("target : $target_z , min : $z_min_boundary , max : $z_max_boundary \n");
 				$target_molecule->Name = "1";
-				push(@out_moleculeList, {'f' => $currentFrame, 'm' => $target_molecule});
+				$doc ->CreateSet("$currentFrame ($mn)-$num", $target_molecule);
+				$mn++;
 			}
 		}
 		$currentFrame++;
 	}
 
-	#나간 분자들에게 set생성
-	#set이름 규칙 => 넘어간프레임 (몇번째로 넘어간 분자인지);
-	#만약 7번 프레임에 하나, 14번 프레임에 하나 넘어갔다면
-	#7 (0), 14 (1) 이렇게 두개가 생성됨.
-	my $mn = 0;
-	foreach my $moleculeData(@out_moleculeList){
-		my $f = $moleculeData -> {'f'};
-		my $m = $moleculeData -> {'m'};
-		$doc ->CreateSet("$f ($mn)", $m);
-		$mn++;
-	}
-
 	my $zmin = $z_boundary->{'min'};
 	my $zmax = $z_boundary->{'max'};
 	print("set 끝점 → min : $zmin , max : $zmax / 각 set에서 더해진 숫자 : $thresholdAdd \n 경계값 → min : $z_min_boundary , max : $z_max_boundary \n");
-}
 
+	
+}
 
 1;
