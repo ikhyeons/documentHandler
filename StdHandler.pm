@@ -11,10 +11,10 @@ sub new {
 	my $stdDoc = shift;
 	#parameter get std document
 	
-	
 	my $self = {
 		_stdDoc => $stdDoc,
 	};
+
 	bless $self, $class;
 	return $self;
 }
