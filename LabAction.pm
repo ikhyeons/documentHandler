@@ -115,9 +115,12 @@ sub get_MSD_of_target_molecule {
 
 #out target molecules position
 sub get_position_of_target_molecule_in_trj {
-	my ($self, $xtdHandler) = @_;
+	my ($self, $xtdHandler, $frameStep) = @_;
+	my $fs = $frameStep? $frameStep : 1;
+
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
+	my $sne = $trj -> FrameTime;
 
 	my @target_molecule_list = $xtdHandler -> target_molecules;
 	my $number_Of_Target_Molecule = scalar @target_molecule_list;
@@ -127,18 +130,22 @@ sub get_position_of_target_molecule_in_trj {
 	#run trajectory
 	#2001
 	my $numFrames = $doc->Trajectory->NumFrames;
+
+	my $stepTime = $sne / ($numFrames -1);
 	
     my $startFrame = 1;	# Starting frame
 	my $everyXFrames = 1;	# Defines how often you want to sample the trajectory
 	my $startFrametime = 0;	# starting frame time
-	my $endFrametime = 200;	
-     	my $rowcount = 0;
-     	my $frametime = $startFrametime;
+   	my $rowcount = 0;
+   	my $frametime = $startFrametime;
 	
 	my @result;
 	
 	
      	foreach my $frameCounter(1..$numFrames) {
+			if (!($frameCounter % $fs == 1 || $frameCounter == 1 || $frameCounter == $numFrames || $fs == 1)){
+				next;
+			}
 	     	$trj -> CurrentFrame = $frameCounter;
 	     	my $currentAtoms = $doc -> UnitCell -> Atoms;
 		my @newData;
@@ -201,11 +208,11 @@ sub get_position_of_target_molecule_in_trj {
 		$table->setColumnHead(@columnName);
 		
 		#최대 프레임 길이만큼 열이 생김 2001개
-		my $rowcounter = 2000;
+		my $rowcounter = scalar @result - 1;
 		
 		#xyz_Table에 실제 데이터를 삽입하는 로직
 		foreach my $col(0..3){
-		 	# 0 x y z iter in 2000
+		 	# 0 x y z iter in rows
 		 	foreach my $row(0..$rowcounter){
 			 	#insert time and data
 			 	if ($col == 1){
@@ -223,7 +230,10 @@ sub get_position_of_target_molecule_in_trj {
 			 		$table -> insertData($row,$col, $data);	
 			 	} else {
 			 		#insert time
-			 		my $data = $row * 50;
+			 		my $data = $row * $fs * $stepTime;
+					if($row == $rowcounter){
+						$data = ($numFrames -1) * $stepTime;
+					}
 			 		$table -> insertData($row,$col, $data);
 			 	}
 			}
@@ -269,13 +279,14 @@ sub get_position_of_target_molecule_in_trj {
 
 sub get_xyz_displacement_in_trj {
 	#get xyz of target molecule in frame
-	my ($self, $xtdHandler) = @_;
+	my ($self, $xtdHandler, $frameStep) = @_;
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
 
 	my $chemicalFormula = $xtdHandler->target_chemicalFormula;
 	my @target_molecule_list = $xtdHandler -> target_molecules;
 	
+	my $fs = $frameStep? $frameStep : 1;
 	
 	#run trajectory
 	#2001
@@ -295,6 +306,10 @@ sub get_xyz_displacement_in_trj {
 	my @initPosition;
 	
 	foreach my $frameCounter(1..$numFrames) {
+			if (!($frameCounter % $fs == 1 || $frameCounter == 1 || $frameCounter == $numFrames || $fs == 1)){
+				next;
+			}
+
 	     	my @newData;
 	     	$trj->CurrentFrame = $frameCounter;
 	     	#get init position;
@@ -350,13 +365,19 @@ sub get_xyz_displacement_in_trj {
 	
 	#insert data sheet -> column
 	my $sheetNum = 0;
-	my $rowNum = 2000;
+
+	my $sne = $trj -> FrameTime;
+	my $stepTime = $sne / ($numFrames -1);
+
+
+
+	my $rowNum = scalar @xyz_Displacement;
 	foreach my $target_molecule(@target_molecule_list){
 		#select sheet index;
 		$table -> selectSheet($sheetNum);
 		#insert data from arr
 		foreach my $col(0..4){
-		foreach my $row(0..$rowNum){
+		foreach my $row(0..$rowNum-1){
 			if($col == 1){
 				my $data = $xyz_Displacement[$row] -> [$sheetNum] -> {'a'};
 				$table -> insertData($row, $col, $data);
@@ -370,7 +391,11 @@ sub get_xyz_displacement_in_trj {
 				my $data = $xyz_Displacement[$row] -> [$sheetNum] -> {'z'};
 				$table -> insertData($row, $col, $data);
 			} else {
-				my $data = $row * 50;
+				my $data = $row * $stepTime * $fs;
+				if($row == $rowNum-1){
+					$data = ($numFrames -1) * $stepTime;
+				}
+				
 				$table -> insertData($row, $col, $data);
 			}
 		}
@@ -386,8 +411,8 @@ sub get_set_molecule_xyz_in_trj {
 	my $startf = $params -> {'startFrame'};
 	my $endf = $params -> {'endFrame'};
 	my $fq = $params -> {'frequency'};
+	my $fs = $params ->{'frameStep'}? $params ->{'frameStep'} : 1;
 	my @setNames = @{$params -> {'setNames'}};
-
 
 	my $doc = $xtdHandler->doc;
 	my $trj = $xtdHandler->trj;
@@ -420,7 +445,14 @@ sub get_set_molecule_xyz_in_trj {
 	}
 	
 	my $rowNum = 0;
+	my $fc = 0;
+	
 	foreach my $frame($startf..$endFrame){
+		if (!($fc % $fs == $fs-1 || $frame == $startf || $frame == $endFrame || $fs == 1)){
+				$fc++;
+				next;
+		}
+		$fc=0;
 		print("get xyz in trj f:$frame \n");
 		$trj -> CurrentFrame = $frame;
 		my $setNum=0;
@@ -432,7 +464,14 @@ sub get_set_molecule_xyz_in_trj {
 			my $tmz = $tmc -> Z;
 
 			foreach my $col(0..3){
-				if($col == 0){$table->insertData($rowNum, $col, ($rowNum + $startf - 1) * $fq);}
+				if($col == 0){
+					if($frame == $endFrame){
+						$table->insertData($rowNum, $col, ($endFrame -1) * $fq);
+					} else {
+						$table->insertData($rowNum, $col, ($rowNum * $fs + $startf - 1)  * $fq);
+					}
+				}
+					
 				elsif($col == 1){$table->insertData($rowNum, $col, $tmx);}
 				elsif($col == 2){$table->insertData($rowNum, $col, $tmy);}
 				elsif($col == 3){$table->insertData($rowNum, $col, $tmz);}
@@ -441,7 +480,6 @@ sub get_set_molecule_xyz_in_trj {
 		}
 		$rowNum++;
 	}
-
 }
 
 sub count_out_molecule_num_by_time{
@@ -450,18 +488,13 @@ sub count_out_molecule_num_by_time{
 	my $startf = $params -> {'startFrame'};
 	my $endf = $params -> {'endFrame'};
 	my $fq = $params -> {'frequency'};
+	my $fs = $params -> {'frameStep'}? $params -> {'frameStep'} : 1;
 	my @thresoldSetNames = @{$params -> {'thresoldSetNames'}};
-
+	print("SF $startf EF $endf / start make std \n");
 	my $thresholdAdd = 13;
 
 	my $doc = $xtdHandler -> doc();
 	my $trj = $xtdHandler -> trj();
-
-	my $endFrame = $endf;
-
-	print("EndFrame : $endFrame \n");
-	#나간 분자 목록
-	my $currentFrame = $startf;
 
 	#이탈을 확인할 Threshold Value를 담을 변수
 	my $z_max_boundary;
@@ -482,11 +515,18 @@ sub count_out_molecule_num_by_time{
 	$table -> setColumnHead(@columns);
 
 	my $row = 0;
-	while($currentFrame <= $endFrame){
+	my $fc = 0;
+
+	foreach my $frame($startf..$endf){
+		if (!($fc % $fs == $fs-1 || $frame == $startf || $frame == $endf || $fs == 1)){
+			$fc++;
+			next;
+		}
+		$fc = 0;
 		#프레임 별 이탈갯수
 		my $mn = 0;
-		print("\n check $currentFrame Frame \n");
-		$trj-> CurrentFrame = $currentFrame;
+		print("\n check $frame Frame \n");
+		$trj-> CurrentFrame = $frame;
 
 		#타겟 분자가 이탈지점을 넘어갔는지 확인
 		my @targetMolecules = $xtdHandler -> target_molecules;
@@ -499,11 +539,16 @@ sub count_out_molecule_num_by_time{
 		}
 		
 		foreach my $col(0..1){
-			if($col ==0){$table->insertData($row, $col, $fq * ($row + $startf));}
+			if($col ==0){
+				if($frame == $endf){
+					$table->insertData($row, $col, ($endf -1) * $fq);
+				} else {
+					$table->insertData($row, $col, ($row * $fs + $startf - 1)  * $fq);
+				}
+			}
 			elsif($col == 1){$table->insertData($row, $col, $mn);}
 		}
 		$row++;
-		$currentFrame++;
 	}
 }
 
