@@ -489,9 +489,10 @@ sub count_out_molecule_num_by_time{
 	my $endf = $params -> {'endFrame'};
 	my $fq = $params -> {'frequency'};
 	my $fs = $params -> {'frameStep'}? $params -> {'frameStep'} : 1;
+	my $thresholdAdd = $params -> {'thresholdAdd'}? $params -> {'thresholdAdd'} : 0;
+	print("thresholdAdd = $thresholdAdd \n");
 	my @thresoldSetNames = @{$params -> {'thresoldSetNames'}};
 	print("SF $startf EF $endf / start make std \n");
-	my $thresholdAdd = 13;
 
 	my $doc = $xtdHandler -> doc();
 	my $trj = $xtdHandler -> trj();
